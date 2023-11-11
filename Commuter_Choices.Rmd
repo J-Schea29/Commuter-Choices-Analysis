@@ -5,16 +5,57 @@ date: "11/10/2023"
 output: html_document
 ---
 
-```{r}
+```{r, warning=FALSE}
 #Install required packages
 library(readxl)
 library(dfidx)
 library(mlogit)
 library(tibble)
-```
-```{r}
+library(tidyverse)
 
+#Import data
 commute_m <- read_excel("commute_m.xlsx")
+head(commute_m)
+```
+
+```{r}
+#Use dfidx package to import data and 
 commute_dfidx <- dfidx(commute_m, shape = 'wide', 
                        choice = 'mode', varying = 3:10)
+
+head(tibble(commute_dfidx))
 ```
+
+```{r}
+mlogit_model = mlogit(formula = mode ~   I(cost/income) | 1 | time, reflevel = 'car', data = commute_dfidx)
+summary(mlogit_model)
+```
+```{r}
+commute_m <- commute_m %>% mutate(prob_car = fitted(mlogit_model, type = 'probabilities')[, 1])
+
+commute_m <- commute_m %>% mutate(elas_own_car = coef(mlogit)[4]*(cost.car/income)*(1-prob_car))
+
+commute_m <- commute_m %>% mutate(elas_cross_car = -coef(mlogit)[4]*(cost.car/income)*prob_car)
+
+commute_m %>% select(starts_with('elas')) %>% summary()
+```
+```{r}
+single = commute_m %>%
+  filter(marital_status == 'single')
+single_df = dfidx(single, shape = 'wide', 
+                  choice = 'mode', varying = 3:10)
+
+married = commute_m %>%
+  filter(marital_status == 'married')
+married_df = dfidx(married, shape = 'wide', 
+                   choice = 'mode', varying = 3:10)
+
+single_mult_logit = mlogit(formula = mode ~  I(cost/income) |1|time, reflevel = 'bike', data = single_df)
+summary(single_mult_logit)
+
+married_mult_logit = mlogit(formula = mode ~  I(cost/income) |1| time, reflevel = 'bike', data = married_df)
+summary(married_mult_logit)
+```
+
+
+
