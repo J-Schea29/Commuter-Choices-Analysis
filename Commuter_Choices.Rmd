@@ -1,61 +1,269 @@
 ---
-title: "Commuter Choices Analysis"
-author: "Jon Scheaffer"
-date: "11/10/2023"
-output: html_document
+title: "Modeling Student Transportation Decisions"
 ---
 
-```{r, warning=FALSE}
+This R Markdown file presents an in-depth analysis of transportation choices among college students at Cal Poly, aiming to provide valuable insights and recommendations for optimizing transportation options. I will explore key conclusions from the analysis and provide detailed coding to support our findings.
+
+The main conclusions from my analysis are as follows:
+
+- **Demand for Cars is fairly inelastic:** We have observed that students' preferences for car usage are relatively insensitive to external factors, such as changes in gas prices or the availability of alternative modes of transportation.
+
+- **Lowering travel time on bus by 20% will reduce the number of students traveling by car:** My analysis suggests that enhancing the efficiency of the bus system by reducing travel time can potentially encourage more students to choose public transportation over personal vehicles.
+
+- **Time is money:** As students' incomes increase, they are more likely to select commuting options that save them time. This emphasizes this importance of targeting the right student with advertising.
+
+In this document, I will provide code samples and data analysis to support these conclusions. I will also discuss recommendations for the college to increase the demand for the bus system and reduce the number of drivers on the road. This report will guide you through the analysis and coding processes to help inform the college's transportation planning and policies. Let's get started.
+
+```{r, warning=FALSE, results='hide', collapse=TRUE, message=FALSE}
 #Install required packages
 library(readxl)
 library(dfidx)
 library(mlogit)
 library(tibble)
 library(tidyverse)
-
+```
+```{r}
 #Import data
 commute_m <- read_excel("commute_m.xlsx")
 head(commute_m)
 ```
 
+
 ```{r}
-#Use dfidx package to import data and 
+#Use dfidx package to convert to an indexed data frame for choice indicator
 commute_dfidx <- dfidx(commute_m, shape = 'wide', 
                        choice = 'mode', varying = 3:10)
 
 head(tibble(commute_dfidx))
 ```
+<br>
+
+# Analysis: Multinomial Logit
+
+To understand the factors influencing student transportation decisions, we employed a multinomial logit model. This approach allows us to analyze how various variables affect students' choices between different modes of travel, including biking, walking, taking the bus, and driving a car.
+
+
 
 ```{r}
+#Model using Multinomial Logit
 mlogit_model = mlogit(formula = mode ~   I(cost/income) | 1 | time, reflevel = 'car', data = commute_dfidx)
+```
+The multinomial logit model was specified using the following formula:
+
+$$V_{ij} = a_{j} + \beta_1 \frac{C_{ij}}{Y_i} + \beta_2 T_{ij}$$
+
+Here's what each part of the formula represents:
+
+- $V_{ij}$: the representative utility of choosing one form of travel.
+- $a_{j}$: a constant
+- $\frac{C_{ij}}{Y_i}$: The ratio of travel cost to income, which captures the financial aspect of their decision.
+- $T_{ij}$: The time required for the chosen mode of travel.
+
+The model allows us to estimate how these variables influence the probability of a student selecting a particular mode of transportation. We will now present the results of the analysis, discussing the coefficients, significance, and implications for transportation choices.
+```{r}
 summary(mlogit_model)
 ```
+An essential point to consider is that the outcome variable, $V_{ij}$, is a measure of the representative utility of each form of travel. When the utility gain for one form of travel exceeds the others, the student will to select that mode of transportation. Because the coefficients prefixed with "time:" are all negative, an increase in travel time will result in a decrease in utility. Similarly, the coefficients for "cost/income" show that an increase in the ratio of cost to income leads to a decrease in utility.
+<br>
+
+# Calculating Price Elasticity of Demand
+
+In this section, we'll explore the concept of price elasticity of demand, specifically for the choice of driving a car among students. Elasticity measures how sensitive the demand for a product is to changes in price.
+
+We'll calculate two types of elasticity: own price elasticity and cross price elasticity. Own price elasticity measures how the demand for driving a car responds to changes in the cost of driving a car. Cross price elasticity assesses how the demand for driving a car changes in response to changes in the price of other transportation options. 
+
 ```{r}
 commute_m <- commute_m %>% mutate(prob_car = fitted(mlogit_model, type = 'probabilities')[, 1])
+```
 
-commute_m <- commute_m %>% mutate(elas_own_car = coef(mlogit)[4]*(cost.car/income)*(1-prob_car))
+To calculate the own price elasticity, we use the formula:
 
-commute_m <- commute_m %>% mutate(elas_cross_car = -coef(mlogit)[4]*(cost.car/income)*prob_car)
 
+$$\text{Own Price Elasticity} = \beta_{2} \left(\frac{\text{cost of driving}}{\text{individual's income}}\right) \left(1 - \text{probability of choosing to drive}\right)$$
+
+
+```{r}
+#To calculate own price elasticity
+commute_m <- commute_m %>% mutate(elas_own_car = coef(mlogit_model)[4]*(cost.car/income)*(1-prob_car))
+```
+For the cross price elasticity, we use the formula:
+
+$$\text{Cross Price Elasticity} = -\beta_{2} \left(\frac{\text{cost of driving}}{\text{individual's income}}\right) \left(\text{probability of choosing to drive}\right)$$
+
+```{r}
+# Calculate cross price elasticity
+commute_m <- commute_m %>% mutate(elas_cross_car = -coef(mlogit_model)[4]*(cost.car/income)*prob_car)
+```
+Now, let's examine the summary statistics for these elasticities:
+```{r}
 commute_m %>% select(starts_with('elas')) %>% summary()
 ```
 ```{r}
-single = commute_m %>%
-  filter(marital_status == 'single')
-single_df = dfidx(single, shape = 'wide', 
-                  choice = 'mode', varying = 3:10)
+#To better illustrate the summary statistics above I plot a kernel density below. 
+commute_m %>% 
+  ggplot(aes(x = elas_own_car)) +
+  geom_density() +
+  xlab('Own Price Elasticty of Demand') +
+  ylab('Kernel Density') + 
+  ggtitle("Own Price Elasticty of Demand with Respect to Cost of Driving a Car")+
+  theme(plot.title = element_text(hjust = 0.5))
 
-married = commute_m %>%
-  filter(marital_status == 'married')
-married_df = dfidx(married, shape = 'wide', 
-                   choice = 'mode', varying = 3:10)
+commute_m %>% 
+  ggplot(aes(x = elas_cross_car)) +
+  geom_density() +
+  xlab('Cross Price Elasticity of Demand') +
+  ylab('Kernel Density') + 
+  ggtitle("Cross Price Elasticity of Demand with Respect to Cost of Driving a Car")+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+<br>
+As we can see from the above, the own price elasticity on average is has an absolute value of 0.665. This put demand for cars as fairly inelastic and does not change much as price of gas increases. The Cross price elsticity above on the other hand is positive and between 0 and 1, suggesting (as should be expected) that the goods are substitutes though only weakly connected. 
+<br>
 
-single_mult_logit = mlogit(formula = mode ~  I(cost/income) |1|time, reflevel = 'bike', data = single_df)
-summary(single_mult_logit)
+# Analyzing the Impact of Bus Travel Time Changes
 
-married_mult_logit = mlogit(formula = mode ~  I(cost/income) |1| time, reflevel = 'bike', data = married_df)
-summary(married_mult_logit)
+In this section, we examine the effects of potential increases and decreases in bus travel time on various forms of travel, including biking, walking, taking the bus, and driving a car.
+
+```{r}
+# Calculate aggregate choices with current parameters
+agg_choices_obs <- colSums(predict(mlogit_model, newdata = commute_dfidx))
+df<-as.data.frame(t(round(agg_choices_obs)))
+time =  list(1)
+
+# Loop through different levels of change in bus travel time
+for (i in seq(from = .5, to = 1.5, length.out = 110)){
+  if (i==1)  next
+  
+  comm_counter <- commute_m %>% 
+    mutate(time.bus = i * time.bus)
+  comm_counter_dfidx <- dfidx(comm_counter, shape = 'wide', 
+                            choice = 'mode', varying = 3:10)
+
+  agg_choices_counter <- predict(mlogit_model, newdata = comm_counter_dfidx)
+  
+  df <- rbind(df,t(round(colSums(agg_choices_counter))))
+  time=append(time, i)
+}
+
+df$time = unlist(time)
+```
+In the code above, we loop through various scenarios of bus travel time adjustments and calculate how they affect students' choices of transportation modes. The results are stored in the "df" data frame.
+```{r}
+#Ploting data above
+ggplot(df, aes(time))+ 
+  geom_line(aes(y = bike, colour = "bike"), size=1) + 
+  geom_line(aes(y = bus, colour = "bus"), size=1) + 
+  geom_line(aes(y = car, colour = "car"), size=1) + 
+  geom_line(aes(y = walk, colour = "walk"), size=1) +
+  scale_x_continuous(labels = function(x) paste0((x-1)*100, "%"))+
+  xlab("Percentage Reduction in Bus Time") +
+  ylab("Students") +
+  ggtitle("Student Choices of Travel as Bus Time Decreases") +
+  theme(plot.title = element_text(hjust = 0.5))
 ```
 
+The code above generates a plot that visualizes how students' travel choices change as bus travel time changes. As we can see, number of cars on the rode increase the longer it takes to ride the bus. 
 
+```{r}
+# Assessing the impact of a 20% decrease in bus time
+comm_counter <- commute_m %>% 
+    mutate(time.bus = .8 * time.bus)
+  comm_counter_dfidx <- dfidx(comm_counter, shape = 'wide', 
+                            choice = 'mode', varying = 3:10)
+
+  agg_choices_counter <- colSums(predict(mlogit_model, newdata = comm_counter_dfidx))
+  
+
+# Calculate percentage changes
+round(agg_choices_counter - agg_choices_obs)[1]/agg_choices_obs[1]
+round(agg_choices_counter - agg_choices_obs)[3]/agg_choices_obs[3]
+```
+In the code above, we specifically assess the impact of a 20% decrease in bus travel time. We calculate the percentage change in the number of cars and the usage of the bus in response to this change.
+
+As a result, a 20% decrease in bus travel time leads to a 13.6% decrease in the number of cars on the road and a 16.3% increase in bus usage among students. These findings provide valuable insights for transportation planning and policy considerations.
+
+```{r}
+# Calculate logsum with current parameters
+logsum_old <- logsum(mlogit_model, data = commute_dfidx) 
+logsum_new <- logsum(mlogit_model, data = comm_counter_dfidx) 
+
+# Calculate the change in consumer surplus
+change_in_consumer_surplus <- sum((logsum_new - logsum_old) / (-coef(mlogit_model)[4]/commute_m$income))
+```
+
+In the code above, we calculate the change in consumer surplus resulting from the 20% decrease in bus travel time. This change is a measure of the additional benefit that students gain from the reduced travel time.
+
+The change in consumer surplus is calculated to be $86.80. This positive value indicates that the decrease in bus travel time by 20% has led to an increase in consumer surplus, indicating that the reduction in travel time is beneficial to students.
+
+<br>
+
+# Analyzing the Impact of Income Changes
+
+In this section, we investigate how changes in students' income levels affect their choices of transportation modes, including biking, walking, taking the bus, and driving a car.
+
+```{r}
+# Calculate aggregate choices with current parameters
+df2<-as.data.frame(t(round(agg_choices_obs)))
+income =  list(1)
+
+# Loop through different levels of income change
+for (i in seq(from = .5, to = 1.5, length.out = 110)){
+  if (i==1)  next
+  
+  # Adjust income
+  comm_counter <- commute_m %>% 
+    mutate(income = i * income)
+  comm_counter_dfidx <- dfidx(comm_counter, shape = 'wide', 
+                            choice = 'mode', varying = 3:10)
+  
+  # Calculate aggregate choices with adjusted parameters
+  agg_choices_counter <- predict(mlogit_model, newdata = comm_counter_dfidx)
+  
+  df2 <- rbind(df2,t(round(colSums(agg_choices_counter))))
+  income=append(income, i)
+}
+
+df2$income = unlist(income)
+```
+In the code above, we analyze how different levels of income changes affect students' transportation choices. The results are stored in the df2 data frame.
+```{r}
+ggplot(df2, aes(income))+ 
+  geom_line(aes(y = bike, colour = "bike"), size=1) + 
+  geom_line(aes(y = bus, colour = "bus"), size=1) + 
+  geom_line(aes(y = car, colour = "car"), size=1) + 
+  geom_line(aes(y = walk, colour = "walk"), size=1) +
+  scale_x_continuous(labels = function(x) paste0((x-1)*100, "%"))+
+  xlab("Percentage Change in Income") +
+  ylab("Students") +
+  ggtitle("Student Choices of Travel as Income Changes") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+From the graph above, we can observe the relationship between changes in income levels and students' choices of transportation modes. The graph shows how various income adjustments affect transportation decisions. As income levels decrease, there is a noticeable increase in the number of students opting for bus travel. This increase in bus ridership becomes more prominent as incomes decline. The relationship is characterized by an accelerating rate, indicating that lower-income students rely more on the bus as their income diminishes. In contrast, as incomes increase, a greater proportion of students choose to drive cars. The graph illustrates that as income levels rise, students become more inclined to drive cars as their preferred mode of transportation.
+
+This insight highlights the impact of income changes on students' travel choices. It demonstrates the importance of considering income-related factors when planning and assessing transportation policies and services for students.
+
+<br>
+
+## Conclusions:
+
+<br>
+
+- **Demand for commuting by car is fairly inelastic:** The demand for cars among college students appears to be relatively insensitive to changes in factors such as gas prices or alternative transportation options.
+
+- **Lowering travel time on bus by 20% will reduce the number of students traveling by car:** Implementing measures to reduce bus travel times by 20% will result in 13.6% decrease in cars on the road and a 16.3% increase in bus usage. 
+
+- **Time is money:** As people's incomes increase, they tend to opt for commuting options that save them time even if that means spending more money. 
+
+These conclusions can help Cal Poly:
+
+- Increase the demand for the bus system
+- Lower the number of drivers on the road
+
+This can be achieved through:
+
+- Introducing more buses to reduce travel time
+- Targeting advertising towards lower-income students
+
+However, it should be noted that while increasing gas prices may reduce the number of cars on the road, the college should not expect a massive shift of students to public transit due to the elasticity of demand for Car transport.
 
